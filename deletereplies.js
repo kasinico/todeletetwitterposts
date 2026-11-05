@@ -77,3 +77,4 @@ window.stopRepliesWipe = () => {
 * EMERGENCY STOP: To stop it while running, simply refresh the webpage (F5), close the browser tab, or type stopRepliesWipe() into the console and press Enter.
 * FIXING THE "HTTP 429 TOO MANY REQUESTS" ERROR: X allows around 100 automatic actions at a time before a temporary lockout. If the console starts throwing red 429 errors or stops clicking, close the tab, wait 30 to 60 minutes for the platform limit to reset, and repeat from Step 1.
 ========================================================================
+
