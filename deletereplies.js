@@ -14,67 +14,77 @@
 Copy the code block below entirely and paste it into the console command line, then press ENTER:
 //  if pasting not allowed, (type: 'allow pasting' on that termina below error)
 
-const myHandle = "globalimpacthq"; 
-console.log(`[tweetdelete] Target initiated: Scanning strictly for replies...`);
 
-let deleteCount = 0;
-const replyInterval = setInterval(() => {
-    const tweets = document.querySelectorAll('article[data-testid="tweet"]');
+(() => {
+    // Automatically detects the username from the active profile screen
+    const profileNameElement = document.querySelector('[data-testid="UserName"]');
+    const currentAccount = profileNameElement ? profileNameElement.innerText.split('\n')[1] || "@Account" : "@Account";
     
-    if (tweets.length === 0) {
-        window.scrollBy(0, 600); 
-        return;
-    }
+    console.log(`[tweetdelete] Target initiated: Universal reply scan started for ${currentAccount}...`);
 
-    let foundReplyOnScreen = false;
+    let deleteCount = 0;
+    const replyInterval = setInterval(() => {
+        const tweets = document.querySelectorAll('article[data-testid="tweet"]');
+        
+        if (tweets.length === 0) {
+            window.scrollBy(0, 600); 
+            return;
+        }
 
-    for (let tweet of tweets) {
-        const contextText = tweet.innerText || "";
-        const isReply = contextText.includes("Replying to") || contextText.includes("返信先") || contextText.includes("En respuesta a");
+        let foundReplyOnScreen = false;
 
-        if (isReply) {
-            foundReplyOnScreen = true;
-            const caret = tweet.querySelector('[data-testid="caret"]');
-            if (caret) {
-                caret.click();
+        for (let tweet of tweets) {
+            // Checks for X's generic reply container structure rather than language text
+            const replyContext = tweet.querySelector('[data-testid="socialContext"]');
+            const isReply = replyContext !== null || (tweet.innerText && tweet.innerText.toLowerCase().includes("replying to"));
 
-                setTimeout(() => {
-                    const dropdownItems = document.querySelectorAll('[data-testid="Dropdown"] > div');
-                    let deleteBtn = Array.from(dropdownItems).find(el => el.innerText.includes('Delete') || el.innerText.includes('削除'));
-                    
-                    if (deleteBtn) {
-                        deleteBtn.click();
+            if (isReply) {
+                foundReplyOnScreen = true;
+                const caret = tweet.querySelector('[data-testid="caret"]');
+                if (caret) {
+                    caret.click();
+
+                    setTimeout(() => {
+                        const dropdownItems = document.querySelectorAll('[data-testid="Dropdown"] > div');
+                        // Finds 'Delete' or any localized language equivalent in the popup menu
+                        let deleteBtn = Array.from(dropdownItems).find(el => {
+                            const t = el.innerText.toLowerCase();
+                            return t.includes('delete') || t.includes('삭제') || t.includes('eliminar') || t.includes('supprimer') || t.includes('löschen') || t.includes('del');
+                        });
                         
-                        setTimeout(() => {
-                            const confirmBtn = document.querySelector('[data-testid="confirmationSheetConfirm"]');
-                            if (confirmBtn) {
-                                confirmBtn.click();
-                                deleteCount++;
-                                console.log(`[tweetdelete] Successfully deleted reply #${deleteCount}`);
-                            }
-                        }, 400);
-                    }
-                }, 400);
-                
-                break; 
+                        if (deleteBtn) {
+                            deleteBtn.click();
+                            
+                            setTimeout(() => {
+                                const confirmBtn = document.querySelector('[data-testid="confirmationSheetConfirm"]');
+                                if (confirmBtn) {
+                                    confirmBtn.click();
+                                    deleteCount++;
+                                    console.log(`[tweetdelete] Successfully deleted reply #${deleteCount}`);
+                                }
+                            }, 400);
+                        }
+                    }, 400);
+                    
+                    break; 
+                }
             }
         }
-    }
 
-    if (!foundReplyOnScreen) {
-        window.scrollBy(0, 500);
-    }
+        if (!foundReplyOnScreen) {
+            window.scrollBy(0, 500);
+        }
 
-}, 3500); 
+    }, 4000); // 4-second delay to safely minimize 429 rate limits
 
-window.stopRepliesWipe = () => {
-    clearInterval(replyInterval);
-    console.log("[tweetdelete] Stopped reply cleanup.");
-};
+    window.stopRepliesWipe = () => {
+        clearInterval(replyInterval);
+        console.log("[tweetdelete] Stopped reply cleanup.");
+    };
+})();
 
 --- STEP 3: CONTROLS & RULES ---
 * KEEP WINDOW IN FOCUS: Do not switch browser tabs or minimize the window. If the tab goes idle, the script will stall.
 * EMERGENCY STOP: To stop it while running, simply refresh the webpage (F5), close the browser tab, or type stopRepliesWipe() into the console and press Enter.
 * FIXING THE "HTTP 429 TOO MANY REQUESTS" ERROR: X allows around 100 automatic actions at a time before a temporary lockout. If the console starts throwing red 429 errors or stops clicking, close the tab, wait 30 to 60 minutes for the platform limit to reset, and repeat from Step 1.
 ========================================================================
-
