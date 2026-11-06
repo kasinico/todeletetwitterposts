@@ -14,6 +14,294 @@
 Copy the code block below entirely and paste it into the console command line, then press ENTER:
 //  if pasting not allowed, (type: 'allow pasting' on that termina below error)
 
+//  code 1, if this fails use second code below ********************************************
+==========================================================================================================
+==========================================================================================================
+(async () => {
+    if (typeof window.stopDeleting === "function") {
+        window.stopDeleting();
+    }
+
+    let running = true;
+    let deleted = 0;
+
+    const attempted = new Set();
+
+    window.stopDeleting = () => {
+        running = false;
+        console.log(`[tweetdelete] STOPPED — deleted ${deleted}`);
+    };
+
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+    const username =
+        location.pathname.split("/")[1]?.replace("@", "").toLowerCase();
+
+    if (!username) {
+        console.error("[tweetdelete] Cannot determine account username.");
+        return;
+    }
+
+    console.log(`[tweetdelete] Account: @${username}`);
+    console.log("[tweetdelete] Emergency stop: window.stopDeleting()");
+
+    function visible(el) {
+        if (!el) return false;
+
+        const r = el.getBoundingClientRect();
+        const s = getComputedStyle(el);
+
+        return (
+            r.width > 0 &&
+            r.height > 0 &&
+            s.display !== "none" &&
+            s.visibility !== "hidden"
+        );
+    }
+
+    function txt(el) {
+        return (
+            el.innerText ||
+            el.textContent ||
+            el.getAttribute("aria-label") ||
+            ""
+        ).trim();
+    }
+
+    function ownArticle(article) {
+        const u = username.toLowerCase();
+
+        return [...article.querySelectorAll("a[href]")].some(a => {
+            const href = (a.getAttribute("href") || "")
+                .split("?")[0]
+                .split("#")[0]
+                .toLowerCase();
+
+            return href === `/${u}` || href === `/${u}/`;
+        });
+    }
+
+    function articleKey(article) {
+        const link = [...article.querySelectorAll('a[href*="/status/"]')]
+            .find(a => /\/status\/\d+/.test(a.href));
+
+        if (link) return link.href;
+
+        return txt(article).replace(/\s+/g, " ").slice(0, 250);
+    }
+
+    function menu(article) {
+        const candidates = [
+            ...article.querySelectorAll('[data-testid="caret"]'),
+            ...article.querySelectorAll('[aria-label*="More"]'),
+            ...article.querySelectorAll('[aria-label*="more"]')
+        ];
+
+        return candidates.find(visible);
+    }
+
+    function deleteOption() {
+        const candidates = [
+            ...document.querySelectorAll('[role="menuitem"]'),
+            ...document.querySelectorAll('button'),
+            ...document.querySelectorAll('[role="button"]')
+        ];
+
+        return candidates.find(el => {
+            if (!visible(el)) return false;
+
+            const t = txt(el).toLowerCase();
+
+            return (
+                t === "delete" ||
+                t === "delete post" ||
+                t === "delete reply"
+            );
+        });
+    }
+
+    function confirmButton() {
+        const dialogs = [
+            ...document.querySelectorAll('[role="dialog"]'),
+            ...document.querySelectorAll('[data-testid*="confirmation"]')
+        ].filter(visible);
+
+        const scopes = dialogs.length ? dialogs : [document];
+
+        for (const scope of scopes) {
+            const buttons = [
+                ...scope.querySelectorAll("button"),
+                ...scope.querySelectorAll('[role="button"]')
+            ];
+
+            const btn = buttons.find(el => {
+                if (!visible(el)) return false;
+
+                const t = txt(el).toLowerCase();
+
+                return (
+                    t === "delete" ||
+                    t === "delete post" ||
+                    t === "delete reply"
+                );
+            });
+
+            if (btn) return btn;
+        }
+
+        return null;
+    }
+
+    async function deleteArticle(article) {
+        const key = articleKey(article);
+
+        if (attempted.has(key)) return false;
+
+        attempted.add(key);
+
+        if (!ownArticle(article)) return false;
+
+        const m = menu(article);
+
+        if (!m) return false;
+
+        console.log(
+            "[tweetdelete] Opening:",
+            txt(article).replace(/\n+/g, " ").slice(0, 120)
+        );
+
+        m.click();
+        await sleep(600);
+
+        const d = deleteOption();
+
+        if (!d) {
+            console.log("[tweetdelete] Delete option unavailable.");
+            document.dispatchEvent(
+                new KeyboardEvent("keydown", {
+                    key: "Escape",
+                    bubbles: true
+                })
+            );
+            return false;
+        }
+
+        d.click();
+        await sleep(600);
+
+        let c = null;
+
+        for (let i = 0; i < 10 && running; i++) {
+            c = confirmButton();
+
+            if (c) break;
+
+            await sleep(250);
+        }
+
+        if (!c) {
+            console.log("[tweetdelete] Confirmation not found.");
+            return false;
+        }
+
+        c.click();
+
+        deleted++;
+
+        console.log(
+            `[tweetdelete] DELETED #${deleted}`,
+            txt(article).replace(/\n+/g, " ").slice(0, 100)
+        );
+
+        await sleep(1500);
+
+        return true;
+    }
+
+    async function scanVisible() {
+        const articles = [...document.querySelectorAll("article")];
+
+        let didDelete = false;
+
+        for (const article of articles) {
+            if (!running) return true;
+
+            if (!ownArticle(article)) continue;
+
+            if (!menu(article)) continue;
+
+            const result = await deleteArticle(article);
+
+            if (result) {
+                didDelete = true;
+
+                // Important: stop this scan and rebuild the DOM list.
+                await sleep(500);
+                break;
+            }
+        }
+
+        return didDelete;
+    }
+
+    let scrollDistance = 900;
+    let noProgress = 0;
+
+    while (running) {
+        const deletedSomething = await scanVisible();
+
+        if (!running) break;
+
+        if (deletedSomething) {
+            noProgress = 0;
+            continue;
+        }
+
+        noProgress++;
+
+        console.log(
+            `[tweetdelete] No new deletion (${noProgress}/2). Loading older replies...`
+        );
+
+        if (noProgress >= 2) {
+            const before = window.scrollY;
+
+            window.scrollBy({
+                top: scrollDistance,
+                behavior: "smooth"
+            });
+
+            await sleep(2000);
+
+            const after = window.scrollY;
+
+            console.log(
+                `[tweetdelete] Scroll: ${Math.round(before)} → ${Math.round(after)}`
+            );
+
+            scrollDistance = Math.min(scrollDistance + 500, 3000);
+
+            // If we're near the bottom, wait longer for X to load.
+            if (after === before) {
+                console.log("[tweetdelete] Waiting for timeline to load...");
+                await sleep(3000);
+            }
+
+            noProgress = 0;
+        }
+
+        await sleep(700);
+    }
+
+    console.log(
+        `[tweetdelete] Finished. Total deleted: ${deleted}`
+    );
+})();
+
+============================================================================================================
+============================================================================================================
+
+// code 2 is below
 
 (() => {
     // Automatically detects the username from the active profile screen
